@@ -142,24 +142,93 @@ def ldf_single_node(application_data):
 
 
 def edf_single_node(application_data):
-    """
-    Schedule jobs on single node using the Earliest Deadline First (EDF) strategy.
+   # There are two further methods in this method to clearly break down the work that is needed to be done, and increase readibility
+    # Extract tasks and messages from the application_data
+    tasks = application_data["tasks"]
+    messages = application_data["messages"]
+    
+    # Initialize dictionaries to hold dependencies and in-degrees of tasks (so that the connection between the task is established)
+    dependencies = defaultdict(list)
+    in_degree = defaultdict(int)
+    
+    # Build the dependency graph from the messages of each task
+    for msg in messages:
+        dependencies[msg["sender"]].append(msg["receiver"])
+        in_degree[msg["receiver"]] += 1
+    
+    # Helper function to perform topological sorting on tasks to ensure dependencies are met and are not scheduled before its predecessor
+    def topological_sort(tasks, dependencies, in_degree):
+        sorted_tasks = []  
+        # Queue for tasks with no incoming edges (in-degree of 0)
+        zero_in_degree_queue = deque([task["id"] for task in tasks if in_degree[task["id"]] == 0])
+        
+        while zero_in_degree_queue:
+            # Process the task with zero in-degree
+            task_id = zero_in_degree_queue.popleft()
+            sorted_tasks.append(task_id)
+            
+            # Decrease the in-degree of dependent tasks
+            for dependent in dependencies[task_id]:
+                in_degree[dependent] -= 1
+                # If a dependent task now has zero in-degree, add it to the queue
+                if in_degree[dependent] == 0:
+                    zero_in_degree_queue.append(dependent)
+        # Returns back all tasks that are sorted so no tasks starts before its predecessor
+        return sorted_tasks  
+    
+    # Here we first the sort the tasks in ascending order based on their deadline.
+    # Sorting tasks by earliest deadline first - EDF
+    sorted_tasks_by_deadline = sorted(tasks, key=lambda x: x["deadline"], reverse=False)
+    
+    # Get the tasks sorted topologically to ensure its dependencies
+    topologically_sorted_tasks = topological_sort(sorted_tasks_by_deadline, dependencies, in_degree)
+    
+    # Helper function to schedule tasks on a single node system
+    def schedule_tasks(tasks, task_order):
+        schedule = []  
+        current_time = 0  
 
-    This function processes application data to schedule jobs based on the earliest
-    deadlines. It builds a dependency graph and schedules accordingly, ensuring that jobs with no predecessors are
-    scheduled first, and subsequent jobs are scheduled based on the minimum deadline of available nodes.
+        # Create a map from task IDs to task details for quick lookup
+        task_map = {task["id"]: task for task in tasks}
+        
+        for task_id in task_order:
+            # Get task details from the task map
+            task = task_map[task_id]  
+            # Assuming all tasks are scheduled on node 0 as it is a single node system
+            node_id = 0  
+            
+            # Calculate start and end time of the task
+            start_time = current_time
+            end_time = current_time + task["wcet"]
+            
+            # Check if the task can be completed within its deadline
+            if end_time > task['deadline']:
+                print(f"Task {task['id']} cannot be scheduled within its deadline.")
+                # Skip tasks that cannot meet their deadline
+                continue  
+            
+            # Append the task schedule to the schedule list
+            schedule.append({
+                "task_id": task_id,
+                "node_id": node_id,
+                "start_time": start_time,
+                "end_time": end_time,
+                "deadline": task["deadline"]
+            })
+            # Move the current time forward by the task's execution time
+            current_time += task["wcet"]  
+        
+        return schedule  
+    
+    # Generate the schedule for the tasks
+    schedule = schedule_tasks(tasks, topologically_sorted_tasks)
+    
+    result = {
+        "schedule": schedule, 
+        "name": "EDF Single Node"
+        } 
 
-    .. todo:: Implement Earliest Deadline First Scheduling (EDF) algorithm for single compute node.
-
-    Args:
-        application_data (dict): Job data including dependencies represented by messages between jobs.
-
-    Returns:
-        list of dict: Contains the scheduled job details, each entry detailing the node assigned, start and end times,
-                      and the job's deadline.
-    """
-
-    return {"schedule": example_schedule, "name": "EDF Single Node"}
+    return result 
 
 
 def ll_multinode(application_data, platform_data):
@@ -292,20 +361,112 @@ def ldf_multinode(application_data, platform_data):
     return result
 
 def edf_multinode(application_data, platform_data):
-    """
-    Schedule jobs on a distributed system with multiple compute nodes using the Earliest Deadline First (EDF) strategy.
-    This function processes application data to schedule jobs based on the earliest
-    deadlines.
+   # As in the Single node LDF method, there are also two methods or helper function you say to provide better readibility to the code base
+    # Extract tasks and messages from the application_data as provided
+    tasks = application_data["tasks"]
+    messages = application_data["messages"]
 
-    .. todo:: Implement Earliest Deadline First(EDF) algorithm to schedule jobs on multiple nodes in a distributed system.
+    # Extract compute nodes and initialize their availability times from the platform_data
+    nodes = platform_data['nodes']
+    compute_nodes = {node['id']: 0 for node in nodes if node['type'] == 'compute'}
 
-    Args:
-        application_data (dict): Job data including dependencies represented by messages between jobs.
-        platform_data (dict): Contains information about the platform, nodes and their types, the links between the nodes and the associated link delay.
+    # Initialize dictionaries to hold dependencies and in-degrees of tasks for their relationships
+    dependencies = defaultdict(list)
+    in_degree = defaultdict(int)
 
-    Returns:
-        list of dict: Contains the scheduled job details, each entry detailing the node assigned, start and end times,
-                      and the job's deadline.
+    # Build the dependency graph based on messages so relationship between each task is established
+    for msg in messages:
+        dependencies[msg["receiver"]].append(msg["sender"])
+        in_degree[msg["receiver"]] += 1
 
-    """
-    return {"schedule": example_schedule, "name": "EDF Multi Node"}
+    # Helper function to perform topological sorting on tasks to ensure dependencies are met
+    def topological_sort(tasks, dependencies, in_degree):
+        sorted_tasks = [] 
+        # Queue for tasks with no incoming edges (in-degree of 0)
+        zero_in_degree_queue = deque([task["id"] for task in tasks if in_degree[task["id"]] == 0])
+
+        while zero_in_degree_queue:
+            # Process the task with zero in-degree
+            task_id = zero_in_degree_queue.popleft()
+            sorted_tasks.append(task_id)
+
+            # Decrease the in-degree of dependent tasks
+            for dependent in dependencies[task_id]:
+                in_degree[dependent] -= 1
+                # If a dependent task now has zero in-degree, add it to the queue
+                if in_degree[dependent] == 0:
+                    zero_in_degree_queue.append(dependent)
+
+        if len(sorted_tasks) != len(tasks):
+            # This if condition handles any tasks which have multiple dependencies that needs to be taken care of such as Task 1 depends task 2, and task 3, and task 0 depends on task 1.
+            remaining_tasks = {task["id"] for task in tasks if task["id"] not in sorted_tasks}
+            while remaining_tasks:
+                for task_id in list(remaining_tasks):
+                    # Check if all dependencies of the task are already in sorted_tasks
+                    if all(dep in sorted_tasks for dep in dependencies[task_id]):
+                        sorted_tasks.append(task_id)
+                        remaining_tasks.remove(task_id)
+        # Return the topologically sorted task IDs
+        return sorted_tasks 
+
+    # Sort tasks by latest deadline first (LDF algorithm)
+    sorted_tasks_by_deadline = sorted(tasks, key=lambda x: x["deadline"], reverse=False)
+
+    # Debugging information to check if the dependencies are correctly identified.
+    print(dependencies)
+    # Get topologically sorted tasks to ensure every dependency is met of those tasks.
+    topologically_sorted_tasks = topological_sort(tasks, dependencies, in_degree)
+
+    # Debugging information to check if the sorting is done correctly
+    print(topologically_sorted_tasks)
+    # Initialize the schedule list
+    schedule = []
+    # Track completion times of tasks so that any task that is dependent on a particular task does not start before its predecessor where we maintain 
+    # this completion times list to track every end time of a task.
+    completion_times = {}
+
+    # Schedule tasks on multi-node system
+    for task_id in topologically_sorted_tasks:
+        # Gets the next task in order
+        task = next(task for task in tasks if task['id'] == task_id)
+
+        # Gets the end time of the prodecessors on which the current task is dependent on so that it does not start before it.
+        predecessors_end_times = [completion_times.get(predecessor, 0) for predecessor in dependencies[task_id]]
+        # Extracting value of the end time and checking if the end time is there or assign 0 as the end time where there are no dependency on the current task.
+        max_predecessor_end_time = max(predecessors_end_times) if predecessors_end_times else 0
+
+        # Find the node with the earliest available time
+        node_id = min(compute_nodes, key=compute_nodes.get)
+        earliest_time = compute_nodes[node_id]
+
+        # Ensure the task starts only after its predecessor has completed and the node is available
+        start_time = max(max_predecessor_end_time, earliest_time)
+        end_time = start_time + task['wcet']
+
+        # Check if the task can be completed within its deadline
+        if end_time > task['deadline']:
+            print(f"Task {task['id']} cannot be scheduled within its deadline.")
+            continue  
+
+        # Append the task to the schedule list
+        schedule.append({
+            'task_id': task['id'],
+            'node_id': node_id,
+            'start_time': start_time,
+            'end_time': end_time,
+            'deadline': task['deadline']
+        })
+
+        # Update the completion time for the task
+        completion_times[task_id] = end_time
+
+        # Update the availability time for the specific node
+        compute_nodes[node_id] = end_time
+
+    # Return the result in the required format
+    result = {
+        'name': 'EDF Multi Node',
+        'schedule': schedule
+    }
+
+    return result
