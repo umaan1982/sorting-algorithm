@@ -140,7 +140,7 @@ def ldf_single_node(application_data):
 
     return result 
 
-
+# Implementation done by Adnan Akin Okcu using ldf_singlenode with non-reverse sorting
 def edf_single_node(application_data):
    # There are two further methods in this method to clearly break down the work that is needed to be done, and increase readibility
     # Extract tasks and messages from the application_data
@@ -360,6 +360,7 @@ def ldf_multinode(application_data, platform_data):
 
     return result
 
+# Implementation done by Adnan Akin Okcu using ldf_multinode with non-reverse sorting
 def edf_multinode(application_data, platform_data):
    # As in the Single node LDF method, there are also two methods or helper function you say to provide better readibility to the code base
     # Extract tasks and messages from the application_data as provided
