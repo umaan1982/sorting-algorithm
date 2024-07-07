@@ -230,23 +230,58 @@ def edf_single_node(application_data):
 
     return result 
 
-
+# Implementation done by Safouane Chahid
 def ll_multinode(application_data, platform_data):
-    """
-    Schedule jobs on a distributed system with multiple compute nodes using the Least Laxity (LL) strategy.
-    This function schedules jobs based on their laxity, with the job having the least laxity being scheduled first.
+ 
+    tasks = application_data['tasks']
+    nodes = platform_data['nodes']
+    node_availability = {node['id']: 0 for node in nodes}
 
-    .. todo:: Implement Least Laxity (LL) algorithm to schedule jobs on multiple node in a distributed system.
+    # Create a directed graph for task dependencies
+    task_graph = nx.DiGraph()
+    for task in tasks:
+        task_graph.add_node(task['id'], wcet=task['wcet'], deadline=task['deadline'])
 
-    Args:
-        application_data (dict): Job data including dependencies represented by messages between jobs.
+    for message in application_data.get('messages', []):
+        task_graph.add_edge(message['sender'], message['receiver'])
 
-    Returns:
-        list of dict: Contains the scheduled job details, each entry detailing the node assigned, start and end times,
-                      and the job's deadline.
+    if not nx.is_directed_acyclic_graph(task_graph):
+        raise ValueError("The task dependency graph has cycles, which is not supported.")
 
-    """
-    return {"schedule": example_schedule, "name": "LL Multi Node"}
+    # Compute topological ordering to ensure tasks are scheduled in dependency order
+    sorted_tasks = list(nx.topological_sort(task_graph))
+
+    schedule = {}
+    for task_id in sorted_tasks:
+        task = task_graph.nodes[task_id]
+        wcet = task['wcet']
+        deadline = task['deadline']
+
+        # Determine the earliest time the task can start by checking the end times of all predecessors
+        earliest_start_time = max((schedule[pred]['end_time'] for pred in task_graph.predecessors(task_id) if pred in schedule), default=0)
+
+        # Find the earliest available node after the last predecessor has finished
+        node_id = min(nodes, key=lambda n: max(earliest_start_time, node_availability[n['id']]))['id']
+
+        start_time = max(earliest_start_time, node_availability[node_id])
+        end_time = start_time + wcet
+
+        if end_time > deadline:
+            raise Exception(f"Task {task_id} cannot meet its deadline. Scheduling failed.")
+
+        schedule[task_id] = {
+            "task_id": task_id,
+            "node_id": node_id,
+            "start_time": start_time,
+            "end_time": end_time,
+            "deadline": deadline
+        }
+        node_availability[node_id] = end_time  # Update the node's availability
+
+    return {
+        "schedule": list(schedule.values()),
+        "name": "LL Multi Node"
+    }
 
 # Implementation done by Usman Ahmed Saeed
 def ldf_multinode(application_data, platform_data):
